@@ -12,28 +12,6 @@ madflixofficials = FILE_AUTO_DELETE
 jishudeveloper = madflixofficials
 file_auto_delete = humanize.naturaldelta(jishudeveloper)
 
-async def send_file_with_delay(client: Client, user_id: int, msg: Message, delay: int = 2):
-    try:
-        if bool(CUSTOM_CAPTION) & bool(msg.document):
-            caption = CUSTOM_CAPTION.format(previouscaption = "" if not msg.caption else msg.caption.html, filename = msg.document.file_name)
-        else:
-            caption = "" if not msg.caption else msg.caption.html
-
-        if DISABLE_CHANNEL_BUTTON:
-            reply_markup = msg.reply_markup
-        else:
-            reply_markup = None
-
-        madflix_msg = await msg.copy(chat_id=user_id, caption=caption, parse_mode=ParseMode.HTML, reply_markup=reply_markup, protect_content=PROTECT_CONTENT)
-        await asyncio.sleep(delay)
-        return madflix_msg
-    except FloodWait as e:
-        await asyncio.sleep(e.x)
-        return await send_file_with_delay(client, user_id, msg, delay)
-    except Exception as e:
-        print(f"Error sending file: {e}")
-        return None
-
 @Bot.on_message(filters.command('start') & filters.private & subscribed)
 async def start_command(client: Client, message: Message):
     id = message.from_user.id
@@ -78,19 +56,36 @@ async def start_command(client: Client, message: Message):
             await message.reply_text("Something Went Wrong..!")
             return
         await temp_msg.delete()
-    
+
         madflix_msgs = [] # List to keep track of sent messages
 
         for msg in messages:
-            madflix_msg = await send_file_with_delay(client, message.from_user.id, msg, 2 if len(messages) > 1 else 0)
-            if madflix_msg:
+            if bool(CUSTOM_CAPTION) & bool(msg.document):
+                caption = CUSTOM_CAPTION.format(previouscaption = "" if not msg.caption else msg.caption.html, filename = msg.document.file_name)
+            else:
+                caption = "" if not msg.caption else msg.caption.html
+
+            if DISABLE_CHANNEL_BUTTON:
+                reply_markup = msg.reply_markup
+            else:
+                reply_markup = None
+
+            try:
+                madflix_msg = await msg.copy(chat_id=message.from_user.id, caption = caption, parse_mode = ParseMode.HTML, reply_markup = reply_markup, protect_content=PROTECT_CONTENT)
+                await asyncio.sleep(0.5)  # 0.5 second delay between sending files
                 madflix_msgs.append(madflix_msg)
 
+            except FloodWait as e:
+                await asyncio.sleep(e.x)
+                madflix_msg = await msg.copy(chat_id=message.from_user.id, caption = caption, parse_mode = ParseMode.HTML, reply_markup = reply_markup, protect_content=PROTECT_CONTENT)
+                madflix_msgs.append(madflix_msg)
+
+            except:
+                pass
         k = await client.send_message(chat_id = message.from_user.id, text=f"<b>❗️ <u>IMPORTANT</u> ❗️</b>\n\nThis Video / File Will Be Deleted In {file_auto_delete} (Due To Copyright Issues).\n\n📌 Please Forward This Video / File To Somewhere Else And Start Downloading There.")
 
         # Schedule the file deletion
         asyncio.create_task(delete_files(madflix_msgs, client, k))
-        
         return
     else:
         reply_markup = InlineKeyboardMarkup(
@@ -163,7 +158,7 @@ async def send_text(client: Bot, message: Message):
         blocked = 0
         deleted = 0
         unsuccessful = 0
-        
+
         pls_wait = await message.reply("<i>Broadcasting Message.. This will Take Some Time</i>")
         for chat_id in query:
             try:
@@ -183,7 +178,7 @@ async def send_text(client: Bot, message: Message):
                 unsuccessful += 1
                 pass
             total += 1
-        
+
         status = f"""<b><u>Broadcast Completed</u></b>
 
 <b>Total Users :</b> <code>{total}</code>
@@ -191,7 +186,7 @@ async def send_text(client: Bot, message: Message):
 <b>Blocked Users :</b> <code>{blocked}</code>
 <b>Deleted Accounts :</b> <code>{deleted}</code>
 <b>Unsuccessful :</b> <code>{unsuccessful}</code>"""
-        
+
         return await pls_wait.edit(status)
 
     else:
@@ -202,12 +197,29 @@ async def send_text(client: Bot, message: Message):
 # Function to handle file deletion
 async def delete_files(messages, client, k):
     await asyncio.sleep(FILE_AUTO_DELETE)  # Wait for the duration specified in config.py
-    for msg in messages:
+    total_files = len(messages)
+    
+    if total_files > 1:
+        await k.edit_text(f"Starting to delete {total_files} files. This may take some time...")
+        
+        for index, msg in enumerate(messages, 1):
+            try:
+                await client.delete_messages(chat_id=msg.chat.id, message_ids=[msg.id])
+                await k.edit_text(f"Deleted file {index}/{total_files}")
+                await asyncio.sleep(2)  # 2-second delay between deletions
+            except Exception as e:
+                print(f"Failed to delete message {msg.id}: {e}")
+                await k.edit_text(f"Failed to delete file {index}/{total_files}")
+                await asyncio.sleep(2)
+        
+        await k.edit_text(f"All {total_files} files have been deleted.")
+    else:
         try:
-            await client.delete_messages(chat_id=msg.chat.id, message_ids=[msg.id])
+            await client.delete_messages(chat_id=messages[0].chat.id, message_ids=[messages[0].id])
+            await k.edit_text("Your Video / File Is Successfully Deleted ✅")
         except Exception as e:
-            print(f"The attempt to delete the media {msg.id} was unsuccessful: {e}")
-    await k.edit_text("Your Video / File Is Successfully Deleted ✅")
+            print(f"Failed to delete the file: {e}")
+            await k.edit_text("Failed to delete the file.")
 
 # Jishu Developer 
 # Don't Remove Credit 🥺
